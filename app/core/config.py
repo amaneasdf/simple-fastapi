@@ -1,5 +1,5 @@
 from functools import lru_cache
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -9,14 +9,14 @@ class Settings(BaseSettings):
 
     # Initial admin username and password
     first_admin_username: str = "admin"
-    first_admin_password: SecretStr = "admin"  # type: ignore
+    first_admin_password: SecretStr = Field(default="admin")
 
     # Database settings
     database_host: str = "localhost"
     database_port: int = 3306
     database_name: str = "fastapitest"
     database_username: str = "root"
-    database_password: SecretStr = ""  # type: ignore
+    database_password: SecretStr = Field(default="")
 
     @property
     def database_url(self):
