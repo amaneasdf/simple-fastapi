@@ -1,16 +1,40 @@
 from contextlib import asynccontextmanager
 from typing import Annotated
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from .core.config import get_settings
 from .core.database import SessionLocal
+from .utils.auth import get_password_hash
 
 SETTINGS = get_settings()
+
+oauth_scheme = OAuth2PasswordBearer(tokenUrl="/token")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from .models import User
+
+    # Ensure that initial admin user is created
+    db = SessionLocal()
+    check = db.query(User).where(User.username == SETTINGS.first_admin_username).first()
+    if not check:
+        print("Creating initial superadmin user...")
+        user = User(
+            username=SETTINGS.first_admin_username,
+            email="",
+            password=get_password_hash(
+                SETTINGS.first_admin_password.get_secret_value()
+            ),
+            fullname="Superadmin",
+            is_active=True,
+            is_superadmin=True,
+        )
+        db.add(user)
+        db.commit()
+    db.close()
     yield
 
 
@@ -34,6 +58,15 @@ async def add_database_session_middleware(request: Request, call_next):
 
 def get_db(request: Request):
     return request.state.db
+
+
+async def get_current_user(token: Annotated[str, Depends(oauth_scheme)]):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    return
 
 
 @app.get("/")
