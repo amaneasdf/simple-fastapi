@@ -24,12 +24,19 @@ def upgrade() -> None:
     op.create_table(
         "users",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("username", sa.String(length=30), nullable=True),
+        sa.Column("username", sa.String(length=30), nullable=False),
         sa.Column("email", sa.String(length=255), nullable=True),
         sa.Column("fullname", sa.String(length=255), nullable=True),
         sa.Column("password", sa.String(length=255), nullable=False),
-        sa.Column("is_active", sa.Boolean(), nullable=True),
-        sa.Column("is_superadmin", sa.Boolean(), nullable=True),
+        sa.Column(
+            "is_active", sa.Boolean(), nullable=True, server_default=sa.text("true")
+        ),
+        sa.Column(
+            "is_superadmin",
+            sa.Boolean(),
+            nullable=True,
+            server_default=sa.text("false"),
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(op.f("ix_users_id"), "users", ["id"], unique=False)

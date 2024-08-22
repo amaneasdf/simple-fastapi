@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     def database_url(self):
         return f"mysql+pymysql://{self.database_username}:{self.database_password.get_secret_value()}@{self.database_host}:{self.database_port}/{self.database_name}"
 
+    # JWT settings
+    secret_key: SecretStr = Field(default="secret")
+    algorithm: str = Field(default="HS256")
+    access_token_expire_minutes: int = Field(default=60)
+
     # Make sure to create a new .env in the project root and set the values
     model_config = SettingsConfigDict(env_file=".env")
 
