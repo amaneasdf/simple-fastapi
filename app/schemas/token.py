@@ -1,13 +1,5 @@
 from pydantic import BaseModel
-
-
-class User(BaseModel):
-    id: int
-    username: str
-    email: str | None = None
-    fullname: str | None = None
-    is_active: bool = True
-    is_superadmin: bool = False
+from ulid import ULID
 
 
 class AccessToken(BaseModel):
@@ -17,5 +9,6 @@ class AccessToken(BaseModel):
 
 
 class TokenData(BaseModel):
-    user: User
+    id: ULID
+    username: str
     scopes: list[str] = []

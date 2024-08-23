@@ -3,20 +3,27 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 from fastapi import Depends, FastAPI, HTTPException, Request, status
-from fastapi.security import HTTPBasic
+from fastapi.security import HTTPBasic, SecurityScopes
+from jwt import ExpiredSignatureError, InvalidTokenError
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from ulid import ULID
 
 from .core.config import get_settings
 from .core.database import SessionLocal
-from .schemas.token import AccessToken
+from .schemas.token import AccessToken, TokenData
+from .schemas.user import User
+from .models import (
+    User as UserDB,
+    AccessToken as AccessTokenDB,
+)
 from .utils.auth import (
     OAuth2ClientCredentials,
     OAuth2ClientCredentialsRequestForm,
     authenticate_user,
     create_access_token,
-    get_password_hash,
     decode_access_token,
+    get_password_hash,
 )
 
 SETTINGS = get_settings()
@@ -72,13 +79,44 @@ def get_db(request: Request):
     return request.state.db
 
 
-async def get_current_user(token: Annotated[str, Depends(oauth_scheme)]):
+async def get_current_user(
+    security_scope: SecurityScopes,
+    token: Annotated[str, Depends(oauth_scheme)],
+    db: Annotated[Session, Depends(get_db)],
+):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    return
+    try:
+        payload = decode_access_token(token)
+        tokendata = TokenData(
+            id=payload.get("jti"),
+            scopes=payload.get("scopes", []),
+            username=payload.get("sub"),
+        )
+    except ExpiredSignatureError:
+        credentials_exception.detail = "Token expired"
+        raise credentials_exception
+    except InvalidTokenError:
+        raise credentials_exception
+
+    check_token = (
+        db.query(func.count(AccessTokenDB.id))
+        .filter(
+            AccessTokenDB.token == str(tokendata.id), AccessTokenDB.is_revoked == False
+        )
+        .scalar()
+    )
+    if check_token == 0:
+        raise credentials_exception
+
+    user = db.query(UserDB).filter(UserDB.username == tokendata.username).first()
+    if user is None:
+        raise credentials_exception
+
+    return user
 
 
 @app.get("/", include_in_schema=False)
@@ -86,7 +124,17 @@ def read_root():
     return {"Hello": "World"}
 
 
-@app.post("/token", tags=["auth"], response_model=AccessToken)
+@app.get("/users/me", tags=["auth"], response_model=User)
+async def read_users_me(current_user: UserDB = Depends(get_current_user)):
+    return current_user
+
+
+@app.post(
+    "/token",
+    tags=["auth"],
+    response_model=AccessToken,
+    responses={status.HTTP_400_BAD_REQUEST: {"description": "Invalid credentials"}},
+)
 async def get_token(
     form_data: Annotated[OAuth2ClientCredentialsRequestForm, Depends()],
     db: Annotated[Session, Depends(get_db)],
@@ -124,10 +172,8 @@ async def get_token(
     )
 
     # Store access token info in database
-    from .models import AccessToken as AccessTokenModel
-
     unixtime = timegm(timestamp.utctimetuple())
-    token = AccessTokenModel(
+    token = AccessTokenDB(
         token=token_id,
         user_id=user.id,
         timestamp=unixtime,
@@ -159,3 +205,9 @@ async def health_check(db: Annotated[Session, Depends(get_db)]):
         raise HTTPException(status_code=500, detail="Internal server error")
 
     return {"status": "ok", "db": dbtest == 1}
+
+
+# Other routes
+from .routes import admin
+
+app.router.include_router(admin.router)

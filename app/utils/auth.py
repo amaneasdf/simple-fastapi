@@ -97,6 +97,14 @@ def create_access_token(data: dict, expires_delta: Union[timedelta, None] = None
     return encoded_jwt
 
 
+def decode_access_token(token: str):
+    settings = get_settings()
+
+    return jwt.decode(
+        token, settings.secret_key.get_secret_value(), algorithms=[settings.algorithm]
+    )
+
+
 class OAuth2ClientCredentials(OAuth2):
     def __init__(
         self,
