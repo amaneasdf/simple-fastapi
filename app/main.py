@@ -121,10 +121,15 @@ async def get_current_user(
 
 @app.get("/", include_in_schema=False)
 def read_root():
-    return {"Hello": "World"}
+    return {"status": "ok"}
 
 
-@app.get("/users/me", tags=["auth"], response_model=User)
+@app.get(
+    "/users/me",
+    tags=["auth"],
+    response_model=User,
+    responses={status.HTTP_401_UNAUTHORIZED: {"description": "Not authenticated"}},
+)
 async def read_users_me(current_user: UserDB = Depends(get_current_user)):
     return current_user
 
@@ -194,6 +199,8 @@ async def health_check(db: Annotated[Session, Depends(get_db)]):
     from sqlalchemy import select
     from sqlalchemy.exc import OperationalError
 
+    starttime = datetime.now()
+
     # Check if the database is up
     try:
         dbtest = db.scalar(select(1))
@@ -204,7 +211,16 @@ async def health_check(db: Annotated[Session, Depends(get_db)]):
         print("Error:", e)
         raise HTTPException(status_code=500, detail="Internal server error")
 
-    return {"status": "ok", "db": dbtest == 1}
+    totaltime = datetime.now() - starttime
+
+    return {
+        "status": "healthy",
+        "time": f"{totaltime.total_seconds()} seconds",
+        "db": {
+            "alias": "localdb",
+            "status": "healthy" if dbtest == 1 else "unhealthy",
+        },
+    }
 
 
 # Other routes

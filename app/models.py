@@ -1,4 +1,4 @@
-from sqlalchemy import Column, ForeignKey, Integer, String, Boolean
+from sqlalchemy import Column, ForeignKey, Integer, String, Boolean, func
 from .core.database import Base
 
 
@@ -12,6 +12,10 @@ class User(Base):
     password = Column(String(255), nullable=False)
     is_active = Column(Boolean, default=True)
     is_superadmin = Column(Boolean, default=False)
+    created_at = Column(Integer, server_default=func.unix_timestamp())
+    updated_at = Column(
+        Integer, server_default=func.unix_timestamp(), onupdate=func.unix_timestamp()
+    )
 
 
 class AccessToken(Base):
@@ -23,3 +27,7 @@ class AccessToken(Base):
     timestamp = Column(Integer)
     expired_at = Column(Integer)
     is_revoked = Column(Boolean, default=False)
+    created_at = Column(Integer, server_default=func.unix_timestamp())
+    updated_at = Column(
+        Integer, server_default=func.unix_timestamp(), onupdate=func.unix_timestamp()
+    )
