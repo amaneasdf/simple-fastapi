@@ -2,7 +2,7 @@ from calendar import timegm
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Request, Security, status
 from fastapi.security import HTTPBasic, SecurityScopes
 from jwt import ExpiredSignatureError, InvalidTokenError
 from sqlalchemy import func
@@ -103,18 +103,26 @@ async def get_current_user(
         raise credentials_exception
 
     check_token = (
-        db.query(func.count(AccessTokenDB.id))
+        db.query(AccessTokenDB)
         .filter(
             AccessTokenDB.token == str(tokendata.id), AccessTokenDB.is_revoked == False
         )
-        .scalar()
+        .first()
     )
-    if check_token == 0:
+    if check_token is None:
         raise credentials_exception
 
     user = db.query(UserDB).filter(UserDB.username == tokendata.username).first()
-    if user is None:
+    if user is None or not user.is_active or check_token.user_id != user.id:
+        credentials_exception.detail = "Invalid credentials"
         raise credentials_exception
+
+    for scope in security_scope.scopes:
+        if not any(x.scope == scope for x in user.allowed_scopes):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not enough permissions",
+            )
 
     return user
 
@@ -130,7 +138,10 @@ def read_root():
     response_model=User,
     responses={status.HTTP_401_UNAUTHORIZED: {"description": "Not authenticated"}},
 )
-async def read_users_me(current_user: UserDB = Depends(get_current_user)):
+async def read_users_me(
+    # current_user: UserDB = Depends(get_current_user),
+    current_user: UserDB = Security(get_current_user, scopes=["me"]),
+):
     return current_user
 
 

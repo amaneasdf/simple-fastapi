@@ -1,4 +1,5 @@
 from sqlalchemy import Column, ForeignKey, Integer, String, Boolean, func
+from sqlalchemy.orm import relationship
 from .core.database import Base
 
 
@@ -16,6 +17,25 @@ class User(Base):
     updated_at = Column(
         Integer, server_default=func.unix_timestamp(), onupdate=func.unix_timestamp()
     )
+
+    allowed_scopes = relationship(
+        "UserScope", back_populates="user", cascade="all, delete-orphan", lazy="select"
+    )
+
+
+class UserScope(Base):
+    __tablename__ = "userscopes"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    scope = Column(String(120), nullable=False, unique=True, index=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(Integer, server_default=func.unix_timestamp())
+    updated_at = Column(
+        Integer, server_default=func.unix_timestamp(), onupdate=func.unix_timestamp()
+    )
+
+    user = relationship("User", back_populates="allowed_scopes")
 
 
 class AccessToken(Base):
