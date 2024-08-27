@@ -5,17 +5,16 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, HTTPException, Request, Security, status
 from fastapi.security import HTTPBasic, SecurityScopes
 from jwt import ExpiredSignatureError, InvalidTokenError
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 from ulid import ULID
 
 from .core.config import get_settings
 from .core.database import SessionLocal
 from .schemas.token import AccessToken, TokenData
-from .schemas.user import User
 from .models import (
     User as UserDB,
     AccessToken as AccessTokenDB,
+    UserScope as UserScopeDB,
 )
 from .utils.auth import (
     OAuth2ClientCredentials,
@@ -28,19 +27,29 @@ from .utils.auth import (
 
 SETTINGS = get_settings()
 
-oauth_scheme = OAuth2ClientCredentials(tokenUrl="/token", scopes={"me": "Me"})
+api_scopes = {
+    "me": "Access user's own data",
+    "admin.assign": "Assign admin rights. Only superadmin can assign admin rights.",
+    "admin": "Admin rights",
+    "users.read": "Read users",
+    "users.write": "Write new users",
+    "users.role": "Change user roles",
+    "users.reset": "Reset user passwords",
+    "users.update": "Update users",
+}
+oauth_scheme = OAuth2ClientCredentials(tokenUrl="/token", scopes=api_scopes)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from .models import User
-
     # Ensure that initial admin user is created
     db = SessionLocal()
-    check = db.query(User).where(User.username == SETTINGS.first_admin_username).first()
+    check = (
+        db.query(UserDB).where(UserDB.username == SETTINGS.first_admin_username).first()
+    )
     if not check:
         print("Creating initial superadmin user...")
-        user = User(
+        user = UserDB(
             username=SETTINGS.first_admin_username,
             email=None,
             password=get_password_hash(
@@ -49,6 +58,10 @@ async def lifespan(app: FastAPI):
             fullname="Superadmin",
             is_active=True,
             is_superadmin=True,
+            allowed_scopes=[
+                UserScopeDB(scope="me", is_active=True),
+                UserScopeDB(scope="admin.assign", is_active=True),
+            ],
         )
         db.add(user)
         db.commit()
@@ -132,24 +145,47 @@ def read_root():
     return {"status": "ok"}
 
 
-@app.get(
-    "/users/me",
-    tags=["auth"],
-    response_model=User,
-    responses={status.HTTP_401_UNAUTHORIZED: {"description": "Not authenticated"}},
-)
-async def read_users_me(
-    # current_user: UserDB = Depends(get_current_user),
-    current_user: UserDB = Security(get_current_user, scopes=["me"]),
-):
-    return current_user
+@app.get("/health")
+async def health_check(db: Annotated[Session, Depends(get_db)]):
+    from sqlalchemy import select
+    from sqlalchemy.exc import OperationalError
+
+    starttime = datetime.now()
+
+    # Check if the database is up
+    try:
+        dbtest = db.scalar(select(1))
+    except OperationalError as e:
+        print("Alert:", e)
+        dbtest = 0
+    except Exception as e:
+        print("Error:", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    totaltime = datetime.now() - starttime
+
+    return {
+        "status": "healthy",
+        "time": f"{totaltime.total_seconds()} seconds",
+        "db": {
+            "alias": "localdb",
+            "status": "healthy" if dbtest == 1 else "unhealthy",
+        },
+    }
 
 
 @app.post(
     "/token",
     tags=["auth"],
     response_model=AccessToken,
-    responses={status.HTTP_400_BAD_REQUEST: {"description": "Invalid credentials"}},
+    responses={
+        status.HTTP_400_BAD_REQUEST: {
+            "description": "Invalid credentials",
+            "content": {
+                "application/json": {"example": {"detail": "Invalid credentials"}}
+            },
+        }
+    },
 )
 async def get_token(
     form_data: Annotated[OAuth2ClientCredentialsRequestForm, Depends()],
@@ -205,36 +241,8 @@ async def get_token(
     )
 
 
-@app.get("/health")
-async def health_check(db: Annotated[Session, Depends(get_db)]):
-    from sqlalchemy import select
-    from sqlalchemy.exc import OperationalError
-
-    starttime = datetime.now()
-
-    # Check if the database is up
-    try:
-        dbtest = db.scalar(select(1))
-    except OperationalError as e:
-        print("Alert:", e)
-        dbtest = 0
-    except Exception as e:
-        print("Error:", e)
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-    totaltime = datetime.now() - starttime
-
-    return {
-        "status": "healthy",
-        "time": f"{totaltime.total_seconds()} seconds",
-        "db": {
-            "alias": "localdb",
-            "status": "healthy" if dbtest == 1 else "unhealthy",
-        },
-    }
-
-
 # Other routes
-from .routes import admin
+from .routes import admin, user
 
 app.router.include_router(admin.router)
+app.router.include_router(user.router)

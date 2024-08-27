@@ -1,4 +1,4 @@
-from sqlalchemy import Column, ForeignKey, Integer, String, Boolean, func
+from sqlalchemy import Column, ForeignKey, Index, Integer, String, Boolean, func
 from sqlalchemy.orm import relationship
 from .core.database import Base
 
@@ -27,8 +27,8 @@ class UserScope(Base):
     __tablename__ = "userscopes"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    scope = Column(String(120), nullable=False, unique=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    scope = Column(String(120), nullable=False)
     is_active = Column(Boolean, default=True)
     created_at = Column(Integer, server_default=func.unix_timestamp())
     updated_at = Column(
@@ -36,6 +36,8 @@ class UserScope(Base):
     )
 
     user = relationship("User", back_populates="allowed_scopes")
+
+    __table_args__ = (Index("ix_userscopes_user_id_scope", "user_id", "scope"),)
 
 
 class AccessToken(Base):
