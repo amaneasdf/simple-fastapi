@@ -27,6 +27,14 @@ class Settings(BaseSettings):
     algorithm: str = Field(default="HS256")
     access_token_expire_minutes: int = Field(default=60)
 
+    # OpenTelemetry settings
+    telemetry_enabled: bool = Field(default=False)
+    verbose_tracing: bool = Field(default=False)
+    trace_sqlalchemy: bool = Field(default=False)
+    telemetry_endpoint: str = Field(default="")
+    telemetry_api_header: str = Field(default="")
+    telemetry_api_key: str = Field(default="")
+
     # Make sure to create a new .env in the project root and set the values
     model_config = SettingsConfigDict(env_file=".env")
 

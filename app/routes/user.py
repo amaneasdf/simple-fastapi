@@ -1,14 +1,15 @@
+from turtle import tracer
 from fastapi import APIRouter, Depends, HTTPException, status, Security
 
 from ..main import get_current_user
 from ..models import User as UserDB
+from ..core.telemetry import get_tracer
 from ..schemas.user import User
 
 
 router = APIRouter(
     prefix="/user",
     tags=["user"],
-    dependencies=[Depends(get_current_user)],
 )
 
 
@@ -27,18 +28,33 @@ router = APIRouter(
 async def read_users_me(
     current_user: UserDB = Security(get_current_user, scopes=["me"]),
 ):
-    return current_user
+    tracer = get_tracer(__name__)
+    with tracer.start_as_current_span("read_users_me"):
+        return current_user
 
 
 @router.post("/reset-password", status_code=status.HTTP_204_NO_CONTENT)
-async def reset_password():
+async def reset_password(
+    current_user: UserDB = Security(get_current_user, scopes=["me"])
+):
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Not implemented"
     )
 
 
 @router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
-async def change_password():
+async def change_password(
+    current_user: UserDB = Security(get_current_user, scopes=["me"])
+):
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Not implemented"
+    )
+
+
+@router.post("/change-email", status_code=status.HTTP_204_NO_CONTENT)
+async def change_email(
+    current_user: UserDB = Security(get_current_user, scopes=["me"])
+):
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Not implemented"
     )

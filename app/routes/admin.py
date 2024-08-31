@@ -1,5 +1,6 @@
-from typing import Annotated
+from typing import Annotated, Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, Security, status
+from sqlalchemy import true
 from sqlalchemy.orm import Session
 
 
@@ -110,7 +111,10 @@ async def update_user(
     if user.scopes:
         # Add or update scopes
         for scope in user.scopes:
-            if scope.scope == "admin.assign":  # Cannot add the "admin.assign" scope
+            if scope.scope in [
+                "admin",
+                "admin.assign",
+            ]:  # Cannot add admin related scopes
                 continue
             if scope.scope in scopes_dict:
                 scopes_dict[scope.scope].is_active = scope.is_active
@@ -121,7 +125,7 @@ async def update_user(
     if user.remove_scopes:
         # Remove scopes
         for scope in user.remove_scopes:
-            if scope == "me":  # Cannot remove the "me" scope
+            if scope in ["me", "admin"]:  # Cannot remove the "me" or "admin" scopes
                 continue
             if scope in scopes_dict.keys():
                 scopes_dict.pop(scope)
@@ -136,21 +140,39 @@ async def update_user(
 async def set_user_as_admin(
     user_id: int,
     db: Annotated[Session, Depends(get_db)],
-    _: UserDB = Security(is_admin, scopes=["admin.assign"]),
+    current_user: UserDB = Security(is_admin, scopes=["admin.assign"]),
+    super: Optional[Literal[1, 0]] = None,
 ):
+    if user_id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You cannot set admin privileges for yourself",
+        )
     db_user = _get_user(db, user_id)
-    db_user.is_superadmin = True
+    if super == 1:
+        db_user.is_superadmin = True
+        db_user.allowed_scopes.append(UserScopeDB(scope="admin.assign", is_active=True))
+    else:
+        db_user.allowed_scopes.append(UserScopeDB(scope="admin", is_active=True))
     db.commit()
-    db.refresh(db_user)
 
 
 @router.put("/users/{user_id}/unset-admin", status_code=status.HTTP_204_NO_CONTENT)
 async def unset_user_as_admin(
     user_id: int,
     db: Annotated[Session, Depends(get_db)],
-    _: UserDB = Security(is_admin, scopes=["admin.assign"]),
+    current_user: UserDB = Security(is_admin, scopes=["admin.assign"]),
 ):
+    if user_id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You cannot remove admin privileges from yourself by yourself",
+        )
     db_user = _get_user(db, user_id)
     db_user.is_superadmin = False
+    db_user.allowed_scopes = [
+        scope
+        for scope in db_user.allowed_scopes
+        if scope.scope not in ["admin", "admin.assign"]
+    ]
     db.commit()
-    db.refresh(db_user)

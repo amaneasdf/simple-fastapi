@@ -66,6 +66,13 @@ async def lifespan(app: FastAPI):
         db.add(user)
         db.commit()
     db.close()
+
+    # Initialize OpenTelemetry
+    if SETTINGS.telemetry_enabled:
+        from .core.telemetry import init_telemetry
+
+        init_telemetry(app)
+
     yield
 
 
@@ -85,6 +92,19 @@ async def add_database_session_middleware(request: Request, call_next):
         response = await call_next(request)
     finally:
         request.state.db.close()
+    return response
+
+
+@app.middleware("http")
+async def add_trace_id_middleware(request: Request, call_next):
+    response = await call_next(request)
+
+    if SETTINGS.telemetry_enabled:
+        from .core.telemetry import get_trace_id
+
+        # Add the trace ID to the response
+        response.headers["X-Trace-ID"] = get_trace_id()
+
     return response
 
 
@@ -131,7 +151,8 @@ async def get_current_user(
         raise credentials_exception
 
     for scope in security_scope.scopes:
-        if not any(x.scope == scope for x in user.allowed_scopes):
+        uscope = next((x for x in user.allowed_scopes if x.scope == scope), None)
+        if not uscope or not uscope.is_active:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not enough permissions",
@@ -166,7 +187,9 @@ async def health_check(db: Annotated[Session, Depends(get_db)]):
 
     return {
         "status": "healthy",
-        "time": f"{totaltime.total_seconds()} seconds",
+        "time": datetime.strptime(str(totaltime), "%H:%M:%S.%f").strftime(
+            "%H:%M:%S.%f"
+        ),
         "db": {
             "alias": "localdb",
             "status": "healthy" if dbtest == 1 else "unhealthy",
@@ -246,3 +269,13 @@ from .routes import admin, user
 
 app.router.include_router(admin.router)
 app.router.include_router(user.router)
+
+
+# Telemetry
+if SETTINGS.telemetry_enabled:
+    from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+    from .core.telemetry import provider
+
+    FastAPIInstrumentor.instrument_app(
+        app, tracer_provider=provider, excluded_urls="/token, /health"
+    )
