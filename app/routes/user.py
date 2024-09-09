@@ -1,4 +1,4 @@
-from turtle import tracer
+from opentelemetry import trace
 from fastapi import APIRouter, Depends, HTTPException, status, Security
 
 from ..main import get_current_user
@@ -11,6 +11,8 @@ router = APIRouter(
     prefix="/user",
     tags=["user"],
 )
+
+_tracer = get_tracer(__name__)
 
 
 @router.get(
@@ -28,8 +30,8 @@ router = APIRouter(
 async def read_users_me(
     current_user: UserDB = Security(get_current_user, scopes=["me"]),
 ):
-    tracer = get_tracer(__name__)
-    with tracer.start_as_current_span("read_users_me"):
+    with _tracer.start_as_current_span("read_users_me"):
+        trace.get_current_span().set_attribute("user.id", current_user.id)
         return current_user
 
 

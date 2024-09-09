@@ -10,6 +10,7 @@ from ulid import ULID
 
 from .core.config import get_settings
 from .core.database import SessionLocal
+from .core.telemetry import get_tracer
 from .schemas.token import AccessToken, TokenData
 from .models import (
     User as UserDB,
@@ -71,7 +72,7 @@ async def lifespan(app: FastAPI):
     if SETTINGS.telemetry_enabled:
         from .core.telemetry import init_telemetry
 
-        init_telemetry(app)
+        init_telemetry()
 
     yield
 
@@ -122,43 +123,45 @@ async def get_current_user(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    try:
-        payload = decode_access_token(token)
-        tokendata = TokenData(
-            id=payload.get("jti"),
-            scopes=payload.get("scopes", []),
-            username=payload.get("sub"),
-        )
-    except ExpiredSignatureError:
-        credentials_exception.detail = "Token expired"
-        raise credentials_exception
-    except InvalidTokenError:
-        raise credentials_exception
-
-    check_token = (
-        db.query(AccessTokenDB)
-        .filter(
-            AccessTokenDB.token == str(tokendata.id), AccessTokenDB.is_revoked == False
-        )
-        .first()
-    )
-    if check_token is None:
-        raise credentials_exception
-
-    user = db.query(UserDB).filter(UserDB.username == tokendata.username).first()
-    if user is None or not user.is_active or check_token.user_id != user.id:
-        credentials_exception.detail = "Invalid credentials"
-        raise credentials_exception
-
-    for scope in security_scope.scopes:
-        uscope = next((x for x in user.allowed_scopes if x.scope == scope), None)
-        if not uscope or not uscope.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Not enough permissions",
+    with get_tracer(__name__).start_as_current_span("user_authenticate"):
+        try:
+            payload = decode_access_token(token)
+            tokendata = TokenData(
+                id=payload.get("jti"),
+                scopes=payload.get("scopes", []),
+                username=payload.get("sub"),
             )
+        except ExpiredSignatureError:
+            credentials_exception.detail = "Token expired"
+            raise credentials_exception
+        except InvalidTokenError:
+            raise credentials_exception
 
-    return user
+        check_token = (
+            db.query(AccessTokenDB)
+            .filter(
+                AccessTokenDB.token == str(tokendata.id),
+                AccessTokenDB.is_revoked == False,
+            )
+            .first()
+        )
+        if check_token is None:
+            raise credentials_exception
+
+        user = db.query(UserDB).filter(UserDB.username == tokendata.username).first()
+        if user is None or not user.is_active or check_token.user_id != user.id:
+            credentials_exception.detail = "Invalid credentials"
+            raise credentials_exception
+
+        for scope in security_scope.scopes:
+            uscope = next((x for x in user.allowed_scopes if x.scope == scope), None)
+            if not uscope or not uscope.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not enough permissions",
+                )
+
+        return user
 
 
 @app.get("/", include_in_schema=False)
