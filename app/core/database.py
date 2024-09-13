@@ -16,7 +16,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
 
-if _settings.telemetry_enabled and _settings.trace_sqlalchemy:
+if _settings.telemetry.enabled and _settings.telemetry.trace_sqlalchemy:
     from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
     from .telemetry import provider
 

@@ -69,7 +69,7 @@ async def lifespan(app: FastAPI):
     db.close()
 
     # Initialize OpenTelemetry
-    if SETTINGS.telemetry_enabled:
+    if SETTINGS.telemetry.enabled:
         from .core.telemetry import init_telemetry
 
         init_telemetry()
@@ -100,7 +100,7 @@ async def add_database_session_middleware(request: Request, call_next):
 async def add_trace_id_middleware(request: Request, call_next):
     response = await call_next(request)
 
-    if SETTINGS.telemetry_enabled:
+    if SETTINGS.telemetry.enabled:
         from .core.telemetry import get_trace_id
 
         # Add the trace ID to the response
@@ -275,7 +275,7 @@ app.router.include_router(user.router)
 
 
 # Telemetry
-if SETTINGS.telemetry_enabled:
+if SETTINGS.telemetry.enabled:
     from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
     from .core.telemetry import provider
 

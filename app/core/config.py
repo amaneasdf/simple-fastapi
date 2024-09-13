@@ -1,11 +1,33 @@
 from functools import lru_cache
-from pydantic import Field, SecretStr
+from pydantic import BaseModel, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class TelemetryConfig(BaseModel):
+    enabled: bool = Field(default=False)
+    verbose_tracing: bool = Field(default=False)
+    trace_sqlalchemy: bool = Field(default=False)
+
+    ingest_endpoint: str = Field(default="")
+
+    api_header: str = Field(default="")
+    api_key: str = Field(default="")
+
+
+class LoggingConfig(BaseModel):
+    level: str = Field(default="INFO")
+
+    agent_enabled: bool = Field(default=False)
+    agent_host: str = Field(default="localhost")
+    agent_port: int = Field(default=5000)
 
 
 class Settings(BaseSettings):
     app_environment: str = "local"
     app_name: str = "FastAPI Test"
+
+    service_name: str = "fastapitest"
+    instance_id: str = "1"
 
     # Initial admin username and password
     first_admin_username: str = "admin"
@@ -28,15 +50,13 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = Field(default=60)
 
     # OpenTelemetry settings
-    telemetry_enabled: bool = Field(default=False)
-    verbose_tracing: bool = Field(default=False)
-    trace_sqlalchemy: bool = Field(default=False)
-    telemetry_endpoint: str = Field(default="")
-    telemetry_api_header: str = Field(default="")
-    telemetry_api_key: str = Field(default="")
+    telemetry: TelemetryConfig = Field(default=TelemetryConfig())
+
+    # Logging settings
+    logging: LoggingConfig = Field(default=LoggingConfig())
 
     # Make sure to create a new .env in the project root and set the values
-    model_config = SettingsConfigDict(env_file=".env")
+    model_config = SettingsConfigDict(env_file=".env", env_nested_delimiter=".")
 
 
 @lru_cache

@@ -11,9 +11,11 @@ from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExport
 from .config import get_settings
 
 
-_settings = get_settings()
+_settings = get_settings().telemetry
 
-provider = TracerProvider(resource=Resource({"service.name": "fastapi"}))
+provider = TracerProvider(
+    resource=Resource({"service.name": get_settings().service_name})
+)
 
 
 def get_tracer(name: str = "opentelemetry.instrumentation.fastapi") -> trace.Tracer:
@@ -24,15 +26,13 @@ def init_telemetry() -> None:
     if _settings.verbose_tracing:
         provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))
 
-    if _settings.telemetry_endpoint:
+    if _settings.ingest_endpoint:
         headers: dict = {"Content-Type": "application/json"}
-        if _settings.telemetry_api_header and _settings.telemetry_api_key:
-            headers.update(
-                {_settings.telemetry_api_header: _settings.telemetry_api_key}
-            )
+        if _settings.api_header and _settings.api_key:
+            headers.update({_settings.api_header: _settings.api_key})
 
         exporter = OTLPSpanExporter(
-            endpoint=_settings.telemetry_endpoint,
+            endpoint=_settings.ingest_endpoint,
             headers=headers,
         )
         processor = BatchSpanProcessor(exporter)
@@ -41,6 +41,10 @@ def init_telemetry() -> None:
 
 def get_trace_id() -> str:
     return hex(trace.get_current_span().get_span_context().trace_id)[2:]
+
+
+def get_span_id() -> str:
+    return hex(trace.get_current_span().get_span_context().span_id)[2:]
 
 
 def shutdown_telemetry() -> None:

@@ -1,6 +1,7 @@
 import logging
 from fluent import handler
-from .telemetry import get_trace_id
+
+from .config import get_settings
 
 
 class CustomLogger:
@@ -11,6 +12,8 @@ class CustomLogger:
         service_name (str): The name of the service.
         instance_id (int): The instance ID of the service.
     """
+
+    _settings = get_settings().logging
 
     def __init__(self, service_name: str, instance_id: str):
         """
@@ -37,7 +40,9 @@ class CustomLogger:
 
         # Create a FluentHandler with the custom format.
         self.h = handler.FluentHandler(
-            f"service.{self.service_name}", host="localhost", port=24224
+            f"service.{self.service_name}",
+            host=self._settings.agent_host,
+            port=self._settings.agent_port,
         )
 
     def __del__(self):
@@ -48,13 +53,18 @@ class CustomLogger:
         Sets the logger and returns it
         """
 
-        formatter = handler.FluentRecordFormatter(self.custom_format)
-        self.h.setFormatter(formatter)
-
         logger = logging.getLogger("uvicorn.error")
+        logger.setLevel(self._settings.level)
 
-        logger.addHandler(self.h)
+        if self._settings.agent_enabled:
+            # Add the FluentHandler to the logger
+            formatter = handler.FluentRecordFormatter(self.custom_format)
+            self.h.setFormatter(formatter)
+            logger.addHandler(self.h)
+
         return logger
 
 
-logger = CustomLogger("fastapi", "1").get_logger()
+logger = CustomLogger(
+    get_settings().service_name, get_settings().instance_id
+).get_logger()

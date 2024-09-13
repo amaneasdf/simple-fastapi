@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from ..main import get_db, get_current_user
 from ..models import User as UserDB, UserScope as UserScopeDB
 from ..schemas.user import User, UserCreate, UserRead, UserUpdate
-from ..core.telemetry import get_tracer
+from ..core.telemetry import get_tracer, get_trace_id, get_span_id
 from ..core.logging import logger
 from ..utils.auth import get_password_hash
 
@@ -66,16 +66,28 @@ async def create_user(
     current_user: Annotated[UserDB, Depends(is_admin)],
 ) -> User:
     with _tracer.start_as_current_span("create_user"):
-        trace.get_current_span().set_attribute("app.user.id", current_user.id)
-        # Check if the username is already registered
-        db_user = db.query(UserDB).filter(UserDB.username == user.username).first()
-        if db_user:
-            _logger.warning(f"User {user.username} already registered")
-            trace.get_current_span().set_attribute(
-                "error.message", "User already registered"
-            )
-            trace.get_current_span().set_attribute("app.input.username", user.username)
-            raise HTTPException(status_code=400, detail="Username already registered")
+        with _tracer.start_as_current_span("create_user.check_username"):
+            trace.get_current_span().set_attribute("app.user.id", current_user.id)
+            # Check if the username is already registered
+            db_user = db.query(UserDB).filter(UserDB.username == user.username).first()
+            if db_user:
+                # If the username is already registered, raise an error
+                _logger.warning(
+                    {
+                        "trace_id": get_trace_id(),
+                        "span_id": get_span_id(),
+                        "message": f"User {user.username} already registered",
+                    }
+                )
+                trace.get_current_span().set_attributes(
+                    {
+                        "error.message": "User already registered",
+                        "app.input.username": user.username,
+                    }
+                )
+                raise HTTPException(
+                    status_code=400, detail="Username already registered"
+                )
 
         with _tracer.start_as_current_span("create_user.model_dump"):
             # Create the user
@@ -100,7 +112,9 @@ async def create_user(
             db.commit()
             db.refresh(db_user)
 
-        _logger.info(f"User {user.username} created by {current_user.username}")
+        _logger.info(
+            f"User {user.username} with id {db_user.id} was created by {current_user.username}"
+        )
         return db_user
 
 
@@ -179,13 +193,17 @@ async def set_user_as_admin(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You cannot set admin privileges for yourself",
         )
-    db_user = _get_user(db, user_id)
-    if super == 1:
-        db_user.is_superadmin = True
-        db_user.allowed_scopes.append(UserScopeDB(scope="admin.assign", is_active=True))
-    else:
-        db_user.allowed_scopes.append(UserScopeDB(scope="admin", is_active=True))
-    db.commit()
+
+    with _tracer.start_as_current_span("set_user_as_admin"):
+        db_user = _get_user(db, user_id)
+        if super == 1:
+            db_user.is_superadmin = True
+            db_user.allowed_scopes.append(
+                UserScopeDB(scope="admin.assign", is_active=True)
+            )
+        else:
+            db_user.allowed_scopes.append(UserScopeDB(scope="admin", is_active=True))
+        db.commit()
 
 
 @router.put("/users/{user_id}/unset-admin", status_code=status.HTTP_204_NO_CONTENT)
@@ -199,11 +217,13 @@ async def unset_user_as_admin(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You cannot remove admin privileges from yourself by yourself",
         )
-    db_user = _get_user(db, user_id)
-    db_user.is_superadmin = False
-    db_user.allowed_scopes = [
-        scope
-        for scope in db_user.allowed_scopes
-        if scope.scope not in ["admin", "admin.assign"]
-    ]
-    db.commit()
+
+    with _tracer.start_as_current_span("unset_user_as_admin"):
+        db_user = _get_user(db, user_id)
+        db_user.is_superadmin = False
+        db_user.allowed_scopes = [
+            scope
+            for scope in db_user.allowed_scopes
+            if scope.scope not in ["admin", "admin.assign"]
+        ]
+        db.commit()
