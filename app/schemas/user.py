@@ -1,8 +1,6 @@
 from re import match
 from typing import Optional, Self
-from click import Option
 from pydantic import BaseModel, Field, EmailStr, field_validator, model_validator
-from sqlalchemy import values
 
 
 class BaseSchema(BaseModel):
@@ -89,5 +87,5 @@ class UserRead(UserBase):
 
 
 class User(BaseSchema, UserRead):
-    is_superadmin: bool
+    role: str
     allowed_scopes: list[UserScope]

@@ -12,7 +12,7 @@ class User(Base):
     fullname = Column(String(255))
     password = Column(String(255), nullable=False)
     is_active = Column(Boolean, default=True)
-    is_superadmin = Column(Boolean, default=False)
+    role = Column(String(10), default="user")
     created_at = Column(Integer, server_default=func.unix_timestamp())
     updated_at = Column(
         Integer, server_default=func.unix_timestamp(), onupdate=func.unix_timestamp()

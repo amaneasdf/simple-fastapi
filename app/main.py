@@ -11,6 +11,7 @@ from ulid import ULID
 from .core.config import get_settings
 from .core.database import SessionLocal
 from .core.telemetry import get_tracer
+from .core.logging import logger
 from .schemas.token import AccessToken, TokenData
 from .models import (
     User as UserDB,
@@ -30,11 +31,9 @@ SETTINGS = get_settings()
 
 api_scopes = {
     "me": "Access user's own data",
-    "admin.assign": "Assign admin rights. Only superadmin can assign admin rights.",
-    "admin": "Admin rights",
+    "admin.assign": "Assign admin access",
     "users.read": "Read users",
     "users.write": "Write new users",
-    "users.role": "Change user roles",
     "users.reset": "Reset user passwords",
     "users.update": "Update users",
 }
@@ -49,7 +48,7 @@ async def lifespan(app: FastAPI):
         db.query(UserDB).where(UserDB.username == SETTINGS.first_admin_username).first()
     )
     if not check:
-        print("Creating initial superadmin user...")
+        logger.info(f"Creating initial admin user: {SETTINGS.first_admin_username}")
         user = UserDB(
             username=SETTINGS.first_admin_username,
             email=None,
@@ -58,10 +57,12 @@ async def lifespan(app: FastAPI):
             ),
             fullname="Superadmin",
             is_active=True,
-            is_superadmin=True,
+            role="superadmin",
             allowed_scopes=[
                 UserScopeDB(scope="me", is_active=True),
                 UserScopeDB(scope="admin.assign", is_active=True),
+                UserScopeDB(scope="users.read", is_active=True),
+                UserScopeDB(scope="users.write", is_active=True),
             ],
         )
         db.add(user)
