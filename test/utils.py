@@ -19,6 +19,7 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 
 
 def override_get_db():
+    # Override get_db to use TestingSessionLocal
     try:
         db = TestingSessionLocal()
         yield db
@@ -26,8 +27,9 @@ def override_get_db():
         db.close()
 
 
-@pytest.fixture
+@pytest.fixture(scope="session", autouse=True)
 def client():
+    # Setup
     app.dependency_overrides[get_db] = override_get_db
 
     app.router.lifespan_context = _DefaultLifespan(app.router)
@@ -35,13 +37,21 @@ def client():
     # Mock startup event
     @app.on_event("startup")
     async def on_startup():
-        db = TestingSessionLocal()
         # Check if table(s) exists in db
-        if db.execute(text("SELECT COUNT(*) FROM sqlite_master")).scalar() == 0:
-            Base.metadata.create_all(db.bind)
+        if (
+            not TestingSessionLocal()
+            .execute(text("SELECT COUNT(*) FROM sqlite_master WHERE type='table'"))
+            .scalar()
+        ):
+            Base.metadata.create_all(engine)
 
-        create_initial_admin_user(db)
-        db.close()
+        create_initial_admin_user(TestingSessionLocal())
 
+    # Yield client
     with TestClient(app) as client:
         yield client
+
+    # Teardown
+    Base.metadata.drop_all(engine)
+
+    app.dependency_overrides.clear()

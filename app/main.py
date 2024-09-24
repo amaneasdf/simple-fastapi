@@ -184,12 +184,18 @@ async def health_check(db: Annotated[Session, Depends(get_db)]):
     # Check if the database is up
     try:
         dbtest = db.scalar(select(1))
-    except OperationalError as e:
-        print("Alert:", e)
-        dbtest = 0
     except Exception as e:
-        print("Error:", e)
-        raise HTTPException(status_code=500, detail="Internal server error")
+        logger.critical(
+            {
+                "message": "Database is not available to use",
+                "error": e,
+            }
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database is not available",
+        )
 
     totaltime = datetime.now() - starttime
 
@@ -200,7 +206,7 @@ async def health_check(db: Annotated[Session, Depends(get_db)]):
         ),
         "db": {
             "alias": "localdb",
-            "status": "healthy" if dbtest == 1 else "unhealthy",
+            "status": "healthy",
         },
     }
 
@@ -211,9 +217,9 @@ async def health_check(db: Annotated[Session, Depends(get_db)]):
     response_model=AccessToken,
     responses={
         status.HTTP_400_BAD_REQUEST: {
-            "description": "Invalid credentials",
+            "description": "Invalid or missing credentials",
             "content": {
-                "application/json": {"example": {"detail": "Invalid credentials"}}
+                "application/json": {"example": {"detail": "Not authenticated"}}
             },
         }
     },
@@ -224,9 +230,7 @@ async def get_token(
     request: Request,
 ):
     failed_auth = HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail="Invalid credentials",
-        headers={"WWW-Authenticate": "Basic"},
+        status_code=status.HTTP_400_BAD_REQUEST, detail="Not authenticated"
     )
 
     # Check credentials in Basic Auth header too
@@ -240,6 +244,7 @@ async def get_token(
         client_id = basic_creds.username
         client_secret = basic_creds.password
     else:
+        failed_auth.headers = {"WWW-Authenticate": "Basic"}
         raise failed_auth
     user = authenticate_user(db, client_id, client_secret)
     if not user:
