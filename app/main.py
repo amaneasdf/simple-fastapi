@@ -40,33 +40,37 @@ api_scopes = {
 oauth_scheme = OAuth2ClientCredentials(tokenUrl="/token", scopes=api_scopes)
 
 
+def create_initial_admin_user(db: Session) -> UserDB:
+    username = SETTINGS.first_admin_username
+    query = db.query(UserDB).filter(UserDB.username == username)
+    if query.count() == 0:
+        logger.info(f"Creating initial admin user: {username}")
+        db.add(
+            UserDB(
+                username=SETTINGS.first_admin_username,
+                email=None,
+                password=get_password_hash(
+                    SETTINGS.first_admin_password.get_secret_value()
+                ),
+                fullname="Superadmin",
+                is_active=True,
+                role="superadmin",
+                allowed_scopes=[
+                    UserScopeDB(scope="me", is_active=True),
+                    UserScopeDB(scope="admin.assign", is_active=True),
+                    UserScopeDB(scope="users.read", is_active=True),
+                    UserScopeDB(scope="users.write", is_active=True),
+                ],
+            )
+        )
+        db.commit()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Ensure that initial admin user is created
     db = SessionLocal()
-    check = (
-        db.query(UserDB).where(UserDB.username == SETTINGS.first_admin_username).first()
-    )
-    if not check:
-        logger.info(f"Creating initial admin user: {SETTINGS.first_admin_username}")
-        user = UserDB(
-            username=SETTINGS.first_admin_username,
-            email=None,
-            password=get_password_hash(
-                SETTINGS.first_admin_password.get_secret_value()
-            ),
-            fullname="Superadmin",
-            is_active=True,
-            role="superadmin",
-            allowed_scopes=[
-                UserScopeDB(scope="me", is_active=True),
-                UserScopeDB(scope="admin.assign", is_active=True),
-                UserScopeDB(scope="users.read", is_active=True),
-                UserScopeDB(scope="users.write", is_active=True),
-            ],
-        )
-        db.add(user)
-        db.commit()
+    create_initial_admin_user(db)
     db.close()
 
     # Initialize OpenTelemetry
@@ -253,7 +257,7 @@ async def get_token(
     # Store access token info in database
     unixtime = timegm(timestamp.utctimetuple())
     token = AccessTokenDB(
-        token=token_id,
+        token=str(token_id),
         user_id=user.id,
         timestamp=unixtime,
         expired_at=unixtime + access_token_expires.total_seconds(),

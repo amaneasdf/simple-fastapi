@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from sqlalchemy import Column, ForeignKey, Index, Integer, String, Boolean, func
 from sqlalchemy.orm import relationship
 from .core.database import Base
@@ -13,9 +14,16 @@ class User(Base):
     password = Column(String(255), nullable=False)
     is_active = Column(Boolean, default=True)
     role = Column(String(10), default="user")
-    created_at = Column(Integer, server_default=func.unix_timestamp())
+    created_at = Column(
+        Integer,
+        default=int(datetime.now(timezone.utc).timestamp()),
+        server_default=func.unix_timestamp(),
+    )
     updated_at = Column(
-        Integer, server_default=func.unix_timestamp(), onupdate=func.unix_timestamp()
+        Integer,
+        server_default=func.unix_timestamp(),
+        default=int(datetime.now(timezone.utc).timestamp()),
+        onupdate=int(datetime.now(timezone.utc).timestamp()),
     )
 
     allowed_scopes = relationship(
@@ -30,9 +38,16 @@ class UserScope(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     scope = Column(String(120), nullable=False)
     is_active = Column(Boolean, default=True)
-    created_at = Column(Integer, server_default=func.unix_timestamp())
+    created_at = Column(
+        Integer,
+        default=int(datetime.now(timezone.utc).timestamp()),
+        server_default=func.unix_timestamp(),
+    )
     updated_at = Column(
-        Integer, server_default=func.unix_timestamp(), onupdate=func.unix_timestamp()
+        Integer,
+        server_default=func.unix_timestamp(),
+        default=int(datetime.now(timezone.utc).timestamp()),
+        onupdate=int(datetime.now(timezone.utc).timestamp()),
     )
 
     user = relationship("User", back_populates="allowed_scopes")
@@ -49,7 +64,14 @@ class AccessToken(Base):
     timestamp = Column(Integer)
     expired_at = Column(Integer)
     is_revoked = Column(Boolean, default=False)
-    created_at = Column(Integer, server_default=func.unix_timestamp())
+    created_at = Column(
+        Integer,
+        default=int(datetime.now(timezone.utc).timestamp()),
+        server_default=func.unix_timestamp(),
+    )
     updated_at = Column(
-        Integer, server_default=func.unix_timestamp(), onupdate=func.unix_timestamp()
+        Integer,
+        server_default=func.unix_timestamp(),
+        default=int(datetime.now(timezone.utc).timestamp()),
+        onupdate=int(datetime.now(timezone.utc).timestamp()),
     )
