@@ -81,11 +81,11 @@ class UserUpdate(UserBase):
         return self
 
 
-class UserRead(UserBase):
+class UserRead(BaseSchema, UserBase):
     username: str
+    role: str
     is_active: bool
 
 
-class User(BaseSchema, UserRead):
-    role: str
+class User(UserRead):
     allowed_scopes: list[UserScope]

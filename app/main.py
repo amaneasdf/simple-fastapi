@@ -118,18 +118,18 @@ def get_db(request: Request):
     return request.state.db
 
 
-async def get_current_user(
-    security_scope: SecurityScopes,
-    token: Annotated[str, Depends(oauth_scheme)],
+def validate_token(
     db: Annotated[Session, Depends(get_db)],
+    token: Annotated[str, Depends(oauth_scheme)],
 ):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    with get_tracer(__name__).start_as_current_span("user_authenticate"):
+    with get_tracer(__name__).start_as_current_span("token_authenticate"):
         try:
+            # Validate token
             payload = decode_access_token(token)
             tokendata = TokenData(
                 id=payload.get("jti"),
@@ -142,6 +142,7 @@ async def get_current_user(
         except InvalidTokenError:
             raise credentials_exception
 
+        # Check if token is revoked
         check_token = (
             db.query(AccessTokenDB)
             .filter(
@@ -153,10 +154,25 @@ async def get_current_user(
         if check_token is None:
             raise credentials_exception
 
+        # Set the user ID in the token data
+        tokendata.id = check_token.user_id
+
+        return payload
+
+
+async def get_current_user(
+    security_scope: SecurityScopes,
+    tokendata: Annotated[TokenData, Depends(validate_token)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    with get_tracer(__name__).start_as_current_span("user_authenticate"):
         user = db.query(UserDB).filter(UserDB.username == tokendata.username).first()
-        if user is None or not user.is_active or check_token.user_id != user.id:
-            credentials_exception.detail = "Invalid credentials"
-            raise credentials_exception
+        if user is None or not user.is_active or tokendata.user_id != user.id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
 
         for scope in security_scope.scopes:
             uscope = next((x for x in user.allowed_scopes if x.scope == scope), None)
@@ -198,12 +214,15 @@ async def health_check(db: Annotated[Session, Depends(get_db)]):
         )
 
     totaltime = datetime.now() - starttime
+    totaltime_str = (
+        str(totaltime).split(".")[0]
+        + "."
+        + str(totaltime.microseconds // 1000).zfill(3)
+    )
 
     return {
         "status": "healthy",
-        "time": datetime.strptime(str(totaltime), "%H:%M:%S.%f").strftime(
-            "%H:%M:%S.%f"
-        ),
+        "time": totaltime_str,
         "db": {
             "alias": "localdb",
             "status": "healthy",

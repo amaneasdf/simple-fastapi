@@ -10,5 +10,6 @@ class AccessToken(BaseModel):
 
 class TokenData(BaseModel):
     id: ULID
+    user_id: int
     username: str
     scopes: list[str] = []

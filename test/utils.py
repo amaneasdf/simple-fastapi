@@ -1,3 +1,4 @@
+from tkinter import dnd
 import pytest
 from sqlalchemy import StaticPool, create_engine, text
 from sqlalchemy.orm import sessionmaker
@@ -6,11 +7,13 @@ from fastapi.testclient import TestClient
 
 from app.main import app, get_db, create_initial_admin_user
 from app.core.database import Base
+from app.models import User as UserDB, UserScope as ScopeDB
+from app.utils.auth import get_password_hash
 
 
 # Mock database
 engine = create_engine(
-    "sqlite:///./testdb.db",
+    "sqlite:///./test/testdb.db",
     connect_args={"check_same_thread": False},
     poolclass=StaticPool,
 )
@@ -25,6 +28,41 @@ def override_get_db():
         yield db
     finally:
         db.close()
+
+
+# Fixtures
+@pytest.fixture
+def mock_user_entry():
+    # Setup
+    db = TestingSessionLocal()
+
+    user = UserDB(
+        username="admin",
+        email="admin@localhost.com",
+        fullname="Administrator",
+        password=get_password_hash("admin"),
+        is_active=True,
+        role="admin",
+        allowed_scopes=[
+            ScopeDB(scope="me", is_active=True),
+            ScopeDB(scope="admin.assign", is_active=True),
+            ScopeDB(scope="users.read", is_active=True),
+            ScopeDB(scope="users.write", is_active=True),
+        ],
+    )
+    db.add(user)
+
+    db.commit()
+    db.refresh(user)
+
+    # Yield user entry
+    yield user
+
+    # Teardown
+    db.delete(user)
+    db.commit()
+
+    db.close()
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -45,6 +83,7 @@ def client():
         ):
             Base.metadata.create_all(engine)
 
+        # Ensure that initial admin user is also created in testing db
         create_initial_admin_user(TestingSessionLocal())
 
     # Yield client
