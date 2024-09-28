@@ -34,6 +34,11 @@ def downgrade() -> None:
     op.drop_column("users", "role")
     op.add_column(
         "users",
-        sa.Column("is_superadmin", sa.Boolean(), nullable=True, server_default="false"),
+        sa.Column(
+            "is_superadmin",
+            sa.Boolean(),
+            nullable=True,
+            server_default=sa.text("false"),
+        ),
     )
     # ### end Alembic commands ###
