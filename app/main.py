@@ -155,9 +155,9 @@ def validate_token(
             raise credentials_exception
 
         # Set the user ID in the token data
-        tokendata.id = check_token.user_id
+        tokendata.user_id = check_token.user_id
 
-        return payload
+        return tokendata
 
 
 async def get_current_user(
