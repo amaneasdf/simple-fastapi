@@ -21,6 +21,22 @@ engine = create_engine(
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
+USER_DATA = {
+    "username": "admin",
+    "email": "admin@localhost.com",
+    "fullname": "Administrator",
+    "password": get_password_hash("admin"),
+    "is_active": True,
+    "role": "admin",
+    "allowed_scopes": [
+        {"scope": "me", "is_active": True},
+        {"scope": "admin.assign", "is_active": True},
+        {"scope": "users.read", "is_active": True},
+        {"scope": "users.write", "is_active": True},
+    ],
+}
+
+
 def override_get_db():
     # Override get_db to use TestingSessionLocal
     try:
@@ -37,18 +53,12 @@ def mock_user_entry():
     db = TestingSessionLocal()
 
     user = UserDB(
-        username="admin",
-        email="admin@localhost.com",
-        fullname="Administrator",
-        password=get_password_hash("admin"),
-        is_active=True,
-        role="admin",
-        allowed_scopes=[
-            ScopeDB(scope="me", is_active=True),
-            ScopeDB(scope="admin.assign", is_active=True),
-            ScopeDB(scope="users.read", is_active=True),
-            ScopeDB(scope="users.write", is_active=True),
-        ],
+        **{
+            **USER_DATA,
+            "allowed_scopes": [
+                ScopeDB(**scope) for scope in USER_DATA["allowed_scopes"]
+            ],
+        }
     )
     db.add(user)
 

@@ -1,6 +1,7 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from sqlalchemy import Column, ForeignKey, Index, Integer, String, Boolean, func
 from sqlalchemy.orm import relationship
+from sqlalchemy.ext.hybrid import hybrid_property
 from .core.database import Base
 
 
@@ -75,3 +76,11 @@ class AccessToken(Base):
         default=int(datetime.now(timezone.utc).timestamp()),
         onupdate=int(datetime.now(timezone.utc).timestamp()),
     )
+
+    @hybrid_property
+    def is_expired(self):
+        # With a 5 minute grace period
+        return (
+            self.expired_at
+            < (datetime.now(timezone.utc) + timedelta(minutes=5)).timestamp()
+        )

@@ -3,6 +3,18 @@ from typing import Optional, Self
 from pydantic import BaseModel, Field, EmailStr, field_validator, model_validator
 
 
+def validate_password(value):
+    if not any(char.isdigit() for char in value):
+        raise ValueError("Password must contain at least one number")
+    if not any(char.isupper() for char in value):
+        raise ValueError("Password must contain at least one uppercase letter")
+    if not any(char.islower() for char in value):
+        raise ValueError("Password must contain at least one lowercase letter")
+    if not any(char in "!@#$%^&*()_+-=[]{}|;:,.<>?/" for char in value):
+        raise ValueError("Password must contain at least one special character")
+    return value
+
+
 class BaseSchema(BaseModel):
     id: Optional[int]
 
@@ -36,15 +48,7 @@ class UserCreate(UserBase):
     @field_validator("password")
     @classmethod
     def validate_password(cls, value):
-        if not any(char.isdigit() for char in value):
-            raise ValueError("Password must contain at least one number")
-        if not any(char.isupper() for char in value):
-            raise ValueError("Password must contain at least one uppercase letter")
-        if not any(char.islower() for char in value):
-            raise ValueError("Password must contain at least one lowercase letter")
-        if not any(char in "!@#$%^&*()_+-=[]{}|;:,.<>?/" for char in value):
-            raise ValueError("Password must contain at least one special character")
-        return value
+        return validate_password(value)
 
     @field_validator("scopes")
     @classmethod
@@ -77,6 +81,20 @@ class UserUpdate(UserBase):
 
         if any(s.scope in self.remove_scopes for s in self.scopes):
             raise ValueError("Cannot remove and add the same scope")
+
+        return self
+
+
+class UserChangePassword(BaseModel):
+    old_password: str
+    new_password: str
+
+    @model_validator(mode="after")
+    def validate_password(self) -> Self:
+        validate_password(self.new_password)
+
+        if self.new_password == self.old_password:
+            raise ValueError("New password cannot be the same as the old password")
 
         return self
 
