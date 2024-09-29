@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 import pytest
 from fastapi import status
+from sqlalchemy import null
 
 from app.main import get_current_user
 from app.models import (
@@ -20,6 +21,14 @@ class TestUserUnauthorized:
 
     def test_unauthorized_read_own_info(self, client):
         response = client.get("/profile")
+
+        assert (
+            response.status_code == status.HTTP_401_UNAUTHORIZED
+        ), "Response code should be 401"
+        assert response.json() == {"detail": "Not authenticated"}
+
+    def test_unauthorized_update_own_info(self, client):
+        response = client.patch("/profile")
 
         assert (
             response.status_code == status.HTTP_401_UNAUTHORIZED
@@ -118,6 +127,86 @@ class TestUserAuthorized:
 
         assert response.status_code == status.HTTP_200_OK, "Response code should be 200"
         assert response.json() == expected_user, "Returned user should match expected"
+
+    def test_update_own_info_invalid_email(self, client):
+        """
+        Scenario:
+            - Try to update own information with invalid email
+
+        Expected:
+            - Response code 422
+        """
+        response = client.patch("/profile", json={"email": "invalid_email"})
+
+        assert (
+            response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        ), "Response code should be 422"
+
+    def test_update_own_info_no_input(self, client):
+        """
+        Scenario:
+            - Try to update own information with no input
+
+        Expected:
+            - Response code 422
+        """
+        response = client.patch("/profile", json={})
+
+        assert (
+            response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        ), "Response code should be 422"
+
+    def test_update_own_info_empty_input(self, client):
+        """
+        Scenario:
+            - Try to update own information with null or empty input
+
+        Expected:
+            - Response code 400
+        """
+        response = client.patch("/profile", json={"email": None, "fullname": ""})
+
+        assert (
+            response.status_code == status.HTTP_400_BAD_REQUEST
+        ), "Response code should be 400"
+        assert response.json() == {"detail": "No fields to update"}
+
+    def test_update_own_info(self, client):
+        """
+        Scenario:
+            - Update own information using /profile endpoint
+
+        Expected:
+            - Response code 200
+            - Correct response payload with expected fields and values
+            - User should be updated in the database
+        """
+        # Setup
+        expected_user = {**USER_DATA, "id": 2}
+        expected_user["email"] = "new_email@fake.com"
+        expected_user["fullname"] = "new fullname"
+        del expected_user["password"]
+        del expected_user["allowed_scopes"]
+
+        # Check
+        response = client.patch(
+            "/profile",
+            json={
+                "email": expected_user["email"],
+                "fullname": expected_user["fullname"],
+            },
+        )
+        response_user = response.json()
+        del response_user["allowed_scopes"]
+
+        assert response.status_code == status.HTTP_200_OK, "Response code should be 200"
+        assert response_user == expected_user, "Returned user should match expected"
+
+        # Check
+        with TestingSessionLocal() as db:
+            user = db.query(UserDB).filter(UserDB.id == 2).first()
+            assert user.email == expected_user["email"]
+            assert user.fullname == expected_user["fullname"]
 
     def test_change_own_password_wrong_password(self, client):
         """

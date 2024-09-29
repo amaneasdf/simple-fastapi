@@ -25,8 +25,8 @@ class UserScope(BaseModel):
 
 
 class UserBase(BaseModel):
-    email: Optional[EmailStr] = None
-    fullname: Optional[str] = None
+    email: Optional[EmailStr] = Field(max_length=255)
+    fullname: Optional[str] = Field(max_length=255)
 
 
 class UserCreate(UserBase):

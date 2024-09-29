@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Security
 from ..core.logging import logger
 from ..main import get_current_user, get_db
 from ..models import AccessToken as AccessTokenDB, User as UserDB
-from ..schemas.user import User, UserChangePassword
+from ..schemas.user import User, UserChangePassword, UserBase as ProfileUpdate
 from ..utils.auth import get_password_hash, verify_password
 from ..utils.telemetry import TracerDependency, current_span, get_span_id, get_trace_id
 
@@ -42,6 +42,56 @@ async def read_users_me(
             }
         )
         return current_user
+
+
+@router.patch(
+    "",
+    response_model=User,
+    summary="Update user profile. If all fields are empty, the user will not be updated.",
+    status_code=status.HTTP_200_OK,
+    responses={
+        status.HTTP_400_BAD_REQUEST: {
+            "description": "No fields to update",
+            "content": {
+                "application/json": {"example": {"detail": "No fields to update"}}
+            },
+        }
+    },
+)
+async def update_users_me(
+    user: ProfileUpdate,
+    current_user: Annotated[UserDB, Security(get_current_user, scopes=["me"])],
+    db: Annotated[Session, Depends(get_db)],
+    tracer: Annotated[Tracer, Depends(TracerDependency(__name__))],
+):
+    # Disallow updating the user if all fields are empty
+    if not any(v for v in user.model_dump().values()):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No fields to update",
+        )
+
+    # Update the user
+    with tracer.start_as_current_span("update_users_me"):
+        logger.info(
+            {
+                "trace_id": get_trace_id(),
+                "span_id": get_span_id(),
+                "message": f"Updating user {current_user.username}",
+            }
+        )
+
+        # Get the user
+        db_user = db.query(UserDB).filter(UserDB.id == current_user.id).first()
+
+        # Update the user
+        db_user.fullname = user.fullname or db_user.fullname
+        db_user.email = user.email or db_user.email
+
+        # Commit the changes
+        db.commit()
+        db.refresh(db_user)
+        return db_user
 
 
 @router.patch(
