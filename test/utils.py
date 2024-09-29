@@ -47,32 +47,28 @@ def override_get_db():
 
 
 # Fixtures
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_user_entry():
     # Setup
-    db = TestingSessionLocal()
+    with TestingSessionLocal() as db:
+        user = UserDB(
+            **{
+                **USER_DATA,
+                "allowed_scopes": [
+                    ScopeDB(**scope) for scope in USER_DATA["allowed_scopes"]
+                ],
+            }
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
 
-    user = UserDB(
-        **{
-            **USER_DATA,
-            "allowed_scopes": [
-                ScopeDB(**scope) for scope in USER_DATA["allowed_scopes"]
-            ],
-        }
-    )
-    db.add(user)
+        # Yield user entry
+        yield user
 
-    db.commit()
-    db.refresh(user)
-
-    # Yield user entry
-    yield user
-
-    # Teardown
-    db.delete(user)
-    db.commit()
-
-    db.close()
+        # Teardown
+        db.delete(user)
+        db.commit()
 
 
 @pytest.fixture(scope="session", autouse=True)

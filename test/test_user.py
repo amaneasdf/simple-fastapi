@@ -1,8 +1,13 @@
+from datetime import datetime, timezone
 import pytest
 from fastapi import status
 
 from app.main import get_current_user
-from app.models import User as UserDB, UserScope as ScopeDB
+from app.models import (
+    AccessToken as AccessTokenDB,
+    User as UserDB,
+    UserScope as ScopeDB,
+)
 from app.utils.auth import verify_password
 from test.utils import USER_DATA, TestingSessionLocal, client, mock_user_entry
 
@@ -74,6 +79,27 @@ class TestUserAuthorized:
 
         client.app.dependency_overrides.pop(get_current_user)
 
+    @pytest.fixture(scope="function")
+    def mock_token_entry(cls):
+        with TestingSessionLocal() as db:
+            # Setup
+            token = AccessTokenDB(
+                token="token",
+                user_id=2,
+                timestamp=int(datetime.now(timezone.utc).timestamp()),
+                expired_at=int(datetime.now(timezone.utc).timestamp()) + 3600,
+            )
+            db.add(token)
+            db.commit()
+            db.refresh(token)
+
+            yield token
+
+            # Teardown
+            db.delete(token)
+            db.commit()
+
+    # Tests
     def test_authorized_read_own_info(self, client):
         """
         Scenario:
@@ -130,7 +156,7 @@ class TestUserAuthorized:
             response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
         ), "Response code should be 422"
 
-    def test_change_own_password(self, client, mock_user_entry):
+    def test_change_own_password(self, client, mock_user_entry, mock_token_entry):
         """
         Scenario:
             - Change own password
@@ -161,7 +187,12 @@ class TestUserAuthorized:
                 new_password, user.password
             ), "Password should be changed"
 
-            # TODO: Add test for active access tokens, to ensure they are revoked
+            existing_token = (
+                db.query(AccessTokenDB)
+                .filter(AccessTokenDB.id == mock_token_entry.id)
+                .first()
+            )
+            assert existing_token.is_revoked, "Access token should be revoked"
 
     def test_read_all_users(self, client, mock_user_entry):
         """
